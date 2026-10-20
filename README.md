@@ -5,6 +5,8 @@ A free, open-source workspace for AI coding CLIs on Linux (Fedora first).
 Use Claude Code, OpenCode and Muse Code side by side, each on your own subscription. They all share **one local MCP hub**, so the tools you pay for (Firecrawl, Parallel, Octen, Context7…) are set up once and work in every CLI. When one CLI runs out of usage, you carry on in another with the same tools.
 
 > **Status: planning.** There's no code yet. The first piece is fully specified and ready to build.
+>
+> 📖 **Is this idea new, and what can we reuse?** See the [prior-art research notes](docs/research/2026-10-prior-art.md).
 
 ## Roadmap
 
