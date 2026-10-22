@@ -1,0 +1,161 @@
+{
+  "tldr": "Final architecture (2026-10-20, docs/architecture.md): Interface is a GitHub fork of Parallel Code (MIT) with about 25 changed upstream lines. Our own TypeScript packages live in this repo and ship into the app as one sha256-pinned bundle. A hub inside the app (MCP SDK v2, 127.0.0.1, a fresh token per agent launch) serves Parallel, Firecrawl, Octen and Context7 tools to every Claude Code, OpenCode and Muse agent the app starts. Keys stay in GNOME Keyring via secret-tool, and no CLI config file is edited. Stages: S1 the fork runs as our app; S2 hub in the app (0.1.0, the first usable release, proven by six tool calls); S3 terminal use and provider CLIs; S4 Continue in...; S5 limits and auto-switch. A weekly bot PR merges upstream. Dropped: the --mcp-config 'fix' (based on a refuted claim), add-mcp, 1MCP and mcp-proxy at runtime, CodexBar. Next: Muse and OpenCode spikes.",
+  "winner_and_grafts": "WINNER: thin-fork. It came first with the maintainability judge (29/40) and the safety judge (33/40), and its 86-point total beats core-first (79) and max-assembly (65). Max-assembly won only the delivery lens. Most of the delivery judge's adjustments below were adopted, so the thin fork keeps its fast first app (S1) and the hub reaches the app in S2.\n\nKEPT FROM THIN-FORK:\n- Two repos: this MIT repo with every OpenSpec change, and a GitHub fork, siddharth-0044/interface-desktop.\n- Rule \"add files, don't edit them\": about 25 seam lines in hot files.\n- A sha256-pinned core bundle unpacked into git-ignored dist-electron/. Re-checked today: upstream's build doesn't clean that folder, and build.files packs it. So the fork never touches package.json or the lockfile.\n- A generated electron-builder config. A typed host contract with apiVersion. Fail-soft: without the bundle the app is plain Parallel Code.\n- The hub in an Electron utilityProcess, keys via secret-tool (stdin confirmed in the local man page), per-launch revocable tokens, and the six-call S2 acceptance test.\n\nREMOVED (relied on refuted facts):\n- P3 and U1 assumed Parallel Code passes --mcp-config to OpenCode and custom agents. Verified false: canvas and coordinator MCP only run for claude, codex and copilot.\n- U3 is retargeted from buildMcpLaunchArgs (refuted call graph) to a launch-contributor hook in pty.ts spawnAgent. That is the one path both SpawnAgent IPC and coordinator children go through.\n\nGRAFTS:\n1. Weekly merge-commit sync PR instead of rebase plus force-with-lease (core-first; maintainability and delivery judges). The mirror stays on main, our default branch is 'interface', and upstream PRs are cherry-picks onto the mirror.\n2. scripts/check-seams in CI (max-assembly).\n3. dependency-cruiser boundaries (core-first). Core imports no Electron and no MCP SDK. SDK v2 is used only in packages/hub. Key reading is allowed only in the hub and ifc run (safety judge's least-privilege idea, adapted).\n4. jsonc-parser plus 'claude mcp' instead of add-mcp. Port only rulesync's Muse field mapping: keep the existing root key, write schema_version 1, use one optional flag (core-first; verification).\n5. Official transcript exports first; continues is optional (core-first). Today's local checks confirmed 'opencode session export' and 'muse export'.\n6. ifc packaged inside the rpm (max-assembly), deferred to S3. It runs on system node: upstream's own MCP server already uses 'command: node', so the rpm requires nodejs.\n7. Keyless providers keep serving when the keyring is locked, plus a dependency register with pins and fallbacks (max-assembly).\n8. Anti-spoofing: the seam deletes, then sets, INTERFACE_* in spawnEnv after buildPtySpawnEnv, so upstream's ENV_BLOCK_LIST isn't edited (maintainability judge's version of the core-first idea).\n9. Pinned vendor installers with --skip-auth (core-first; the safety judge confirmed that Firecrawl's browser login writes plaintext credentials).\n10. Write-only keys IPC (windows get hasKey only) and an honest threat model, including ptrace_scope 0 (core-first; safety judge).\n11. Global sync by reference: Muse ${VAR}, OpenCode {file:}/{env:}, Claude headersHelper. Never a literal token (safety judge).\n12. A spawn-env CI test and constant-time token compare (max-assembly).\n13. Hub front on the SDK v2 Host, Origin and bearer helpers. Reject any Origin, no CORS, no SSE, checks before body parsing (safety judge, prompted by the mcp-proxy finding).\n14. Billing guard at launch, not only in doctor (safety judge).\n15. Electron fuses (safety judge). Re-checked today that upstream doesn't rely on ELECTRON_RUN_AS_NODE for its MCP server.\n16. Key-to-host binding and absolute shim paths (safety judge).\n17. Untrusted handoff briefs, from Waybill's rule.\n18. One --mcp-config list next to upstream's canvas config, with fixtures for both argument orders (delivery judge; canvas is on for every fresh Claude spawn).\n19. Explicit S2 acceptance. Global-sync fallback pulled into S2 for any CLI whose spike fails (delivery judge).\n20. Canonical Muse 'mcpServers' with required:false, because this machine's settings.json uses mcpServers (delivery judge).\n21. OpenCode entry with oauth:false and a Code Mode check (core-first).\n22. 'fetch-core --local' plus a fork-side core-bump job, with no cross-repo token (maintainability judge).\n23. A dev-prerequisites check for gcc-c++, make and rpm-build (delivery judge).\n\nNEW FROM THIS PASS (read-only checks):\n- Upstream already has a 'Chat is turned off for Claude Code' setting (disableClaudeUiMode, default false in src/store/core.ts). Turning off the Agent-SDK chat view is therefore a one-line default change. That view passes only one MCP config, so our hub never reaches it.\n- GitHub docs: PRs opened by a workflow with GITHUB_TOKEN do get CI runs, but each run needs one maintainer approval click. The bot flow works without a PAT.\n- muse --yolo disables approval and the sandbox. muse --provider echo exists for cheap spikes.",
+  "openspec_changes": [
+    {
+      "name": "setup-dev-loop",
+      "action": "new",
+      "order": 1,
+      "scope": "S1. npm-workspaces scaffold in this repo (packages/core, hub, desktop, cli), GitHub Actions CI, worktree scripts (wt-new, ship, wt-done), repo settings, CONTRIBUTING, README roadmap update and docs/architecture.md.",
+      "key_edits": "Create with /opsx:propose. Take over add-mcp-hub tasks 1.1 (already done) through 1.6. Change 1.2 into a four-package npm-workspaces scaffold with dependency-cruiser rules: core imports neither electron nor @modelcontextprotocol/*; SDK v2 is used only in packages/hub; the key-reading half of SecretStore is used only by hub and the ifc run code. Make 1.3 CI also run 'openspec validate --strict', a license allowlist and gitleaks. Rewrite 1.5: the GitHub repo already exists (public, not a fork), so only turn on auto-merge and delete-branch-on-merge (both off today) and squash-only. Keep 1.6 (protect main with the CI check, test the loop with a trivial PR). Update the README roadmap to S1-S5 and link docs/architecture.md."
+    },
+    {
+      "name": "fork-desktop-shell",
+      "action": "new",
+      "order": 2,
+      "scope": "S1. GitHub fork siddharth-0044/interface-desktop of johannesjo/parallel-code: main mirror plus 'interface' default branch, Muse preset, generated electron-builder config (AppImage + rpm), weekly upstream-sync PR, check-seams, fork CI and releases. Specified in this repo's openspec/.",
+      "key_edits": "Requirements: installs and runs on Fedora 44 from the rpm and the AppImage. appId, product name, protocol scheme and update feed are ours, and CI asserts them. The Muse preset launches, resumes with 'resume --last' and skips permissions with '--yolo'. check-seams fails on unlisted upstream edits. Sync PRs are merged with a merge commit. Tasks: (1) Fork and branch model. (2) interface/PATCHES.md. (3) P1 Muse preset: electron/ipc/agents.ts +10, skip-permissions.ts +1. (4) P6 interface/scripts/build.mjs, which generates the builder config: publish to our fork; linux targets AppImage and rpm; rpm depends on libsecret and nodejs; electronFuses with runAsNode, NODE_OPTIONS and inspect turned off. (5) Optional P7, only if the user agrees: disableClaudeUiMode default true in src/store/core.ts. (6) 'gh workflow disable' for release.yml and android.yml. (7) upstream-sync.yml, interface-ci.yml and interface-release.yml. (8) A dev prerequisites check: gcc-c++, make, rpm-build, node >= 22.12. (9) File the Muse preset as an upstream issue and test rpm PR #315. Do NOT carry the thin-fork P3/U1 patches: they relied on the refuted claim that Parallel Code passes --mcp-config to OpenCode and custom agents."
+    },
+    {
+      "name": "add-mcp-hub",
+      "action": "revise-existing",
+      "order": 3,
+      "scope": "S2. packages/core (SecretStore on secret-tool, provider catalog, LaunchPlanner) and packages/hub (SDK v2 aggregator with Host, Origin and token guards). UI-agnostic; used by the desktop app now and ifc later.",
+      "key_edits": "Use /opsx:update.\n\nproposal.md:\n- Remove the framing 'terminal-first, can be shipped before any GUI' and the 'macOS-only JOY' phrase (JOY now ships Linux builds, including a Fedora rpm).\n- Say the hub is the engine of Interface Desktop and reaches agents per launch.\n- Move 'Repository and delivery setup' to setup-dev-loop and 'Per-CLI adapters' to terminal-and-global-sync.\n- Impact: no CLI config writes in this change. Dependencies are @modelcontextprotocol/server, /client and /node (Apache-2.0) and the secret-tool binary.\n\ndesign.md:\n- D1: TypeScript on the SDK v2 split packages. The downstream endpoint must speak the legacy protocol era: Muse advertises 2025-06-18 and OpenCode v2 defaults to 'legacy'. Use createMcpHandler, with versionNegotiation 'auto' toward providers.\n- D2: secret-tool subprocess with the secret on stdin and attributes application=interface, kind=provider-key, provider=<id>. It sits behind a SecretStore split into reader and writer. No fallback store. Document @napi-rs/keyring pinned to {linux:{store:'secret-service'}} as the alternative.\n- D3: paths become ~/.config/interface/hub.json and $XDG_RUNTIME_DIR/interface/.\n- D4: keep always-prefixed <provider>_<tool> names, with a 64-character limit and a hash fallback.\n- D5: per-launch tokens, minted by the caller, registered with the hub and revoked on exit. Host allowlist; reject any request with an Origin header; no CORS; no SSE endpoint; constant-time compare; all checks before body parsing on every route. Default port 7337, with a free-port fallback.\n- D6: replace the adapters with LaunchPlanner.plan(ctx) -> {args, env, files, cleanup}.\n  - Claude: a 0600 file merged into the existing --mcp-config list.\n  - OpenCode: --standalone plus OPENCODE_CONFIG_CONTENT, deep-merged with any existing value. Use the v2 mcp.servers.interface shape with oauth:false; the spike decides codemode.\n  - Muse: -c mcpServers.interface with canonical type, url and headers, required:false, and header ${INTERFACE_HUB_AUTH}.\n  - Skip shells, Docker tasks, unknown CLIs and globally synced CLIs. Add the billing guard and the INTERFACE_* spoof guard.\n- D7: the caller hosts the hub (an Electron utilityProcess in the app, ifc later), with lazy connect and backoff.\n- D8: moves to setup-dev-loop.\n- Catalog: Parallel search (keyless OK) and task (same key); Firecrawl Bearer, with a warning when keyless; Octen x-api-key; Context7 optional Bearer. Each key only goes to its catalog host. Keyless providers keep working when the keyring is locked.\n- Risks: replace the native-module risk with the spike risks.\n\nspecs/mcp-hub/spec.md:\n- Keep the provider, aggregation, naming, failing-provider and diagnostics requirements.\n- MODIFY 'Hub endpoint requires a local access token' to per-launch tokens. Scenarios: token rejected after the agent exits; foreign Host rejected; any Origin rejected; OPTIONS and /sse rejected.\n- REMOVE 'Supported CLIs are pointed at the hub' and 'CLI config edits are safe and reversible'; they move to terminal-and-global-sync.\n- ADD 'Agents get the hub per launch'. Scenarios: launch plans match the fixtures for each CLI; no CLI config file changes; shells and Docker are skipped.\n- ADD 'Keys only reach their own provider host', 'Keyless providers keep working when the keyring is locked' and 'Claude launches drop Anthropic API variables by default'.\n\ntasks.md:\n- Delete group 1 (now setup-dev-loop) and group 4 (now terminal-and-global-sync).\n- New group 0, spikes, each with its result written into design.md: Muse -c with --provider echo; OpenCode --standalone with env config and codemode; Claude with two configs in one --mcp-config; whether CLIs send an Origin header.\n- 2.1 SecretToolStore plus MemoryStore. 2.3 catalog with verified endpoints. 3.x hub on SDK v2 with security integration tests.\n- New group: LaunchPlanner with golden fixtures for Claude 2.1.304, OpenCode 2.0.32 and Muse 1.4.11, plus a spawn-env test.\n- 5.1 doctor: billing check and keyring state.\n- Move 6.1 (end-to-end) to desktop-hub-integration.\n- Remove the 'fork-shell-integration' follow-up line."
+    },
+    {
+      "name": "desktop-hub-integration",
+      "action": "new",
+      "order": 4,
+      "scope": "S2. InterfaceHost/InterfaceCore v1 contract. Seams: P2 launch seam (pty.ts), P4 bootstrap (main.ts), P5 Settings 'MCP Hub' section plus one IPC channel. Hub as a utilityProcess, Hub & Keys window, per-launch tokens, core release and core-bump flow, fetch-core --local, and the S2 acceptance test.",
+      "key_edits": "Requirements:\n- Without the core bundle, the app runs as plain Parallel Code.\n- Agents started in the app get the hub's tools, and no CLI config file changes.\n- Each launch gets its own token. It is revoked on PTY exit and re-registered after a hub restart.\n- Windows only ever see hasKey.\n- Claude's config joins upstream's existing --mcp-config list, and canvas tools still work. Fixtures cover both argument orders.\n- Shells, Docker tasks and the Claude chat view are not injected.\n\nTasks:\n- InterfaceHost v1 contract (onPtyEvent, setLaunchContributor, main window) with an apiVersion check.\n- P2: launch-seam in electron/ipc/pty.ts, right after applyAgentHookLaunch. It stays synchronous, mints the token from crypto random bytes and posts it over MessagePort.\n- P4: bootstrap in electron/main.ts.\n- P5: Settings section plus one channel in channel-manifest.json and preload.cjs.\n- Hub & Keys window with its own preload.\n- utilityProcess supervisor with restart and backoff.\n- release-core.yml (tgz plus sha256), core-bump.yml in the fork (GITHUB_TOKEN; a maintainer approves the CI run) and fetch-core.mjs with --local.\n- The six-call acceptance test on Fedora 44.\n- File an upstream issue for a launch-contributor hook in spawnAgent. Not buildMcpLaunchArgs, which never runs for OpenCode or Muse."
+    },
+    {
+      "name": "terminal-and-global-sync",
+      "action": "new",
+      "order": 5,
+      "scope": "S3, pulled into S2 per CLI if that CLI fails its spike. ifc packaged in the rpm, a control socket for per-launch tokens, ifc launch, a systemd user unit, the app attaching to a running hub, and opt-in global sync by reference.",
+      "key_edits": "Carry over add-mcp-hub's sync requirements with the entry renamed to 'interface': existing entries preserved, idempotent, backup before the first write, unsync, unparseable file left alone, CLI not installed.\n\nTasks:\n- Package ifc in the rpm on system node.\n- Control socket at $XDG_RUNTIME_DIR/interface/control.sock (0600).\n- ifc launch claude|opencode|muse.\n- ifc service install: systemd user unit with Restart=on-failure.\n- The app attaches to a hub that is already running.\n\nGlobal sync rules:\n- Claude: 'claude mcp add/remove --scope user', with the token through headersHelper if that is verified.\n- OpenCode: jsonc-parser edits into mcp.servers, only for v2 files, with a {file:} or {env:} token reference.\n- Muse: keep the file's existing root key (mcpServers on this machine), write schema_version 1 only when creating the file, use exactly one optional flag and a ${VAR} header.\n- Never use add-mcp, and never write a literal token.\n- Skip per-launch injection for synced CLIs."
+    },
+    {
+      "name": "provider-cli-keys",
+      "action": "new",
+      "order": 6,
+      "scope": "S3. ifc run <cli> -- args, PATH shims for agents launched by Interface, vendor skill installer buttons, doctor checks.",
+      "key_edits": "Requirements: a provider key reaches only the one child process, and vendor installers never log in.\n\nTasks:\n- Key table {parallel-cli: PARALLEL_API_KEY, firecrawl: FIRECRAWL_API_KEY}.\n- Shim directory (holds no secrets), put first on PATH only for agents Interface launches.\n- Shims exec the absolute path recorded at setup, after an owner check.\n- Skill buttons run pinned installers in a visible terminal: 'firecrawl-cli init --all --skip-auth', and Parallel's installer once verified.\n- doctor scans ~/.config/firecrawl-cli/credentials.json.\n- Document that Muse's default sandbox may block D-Bus; --yolo turns the sandbox off."
+    },
+    {
+      "name": "cross-cli-handoff",
+      "action": "new",
+      "order": 7,
+      "scope": "S4. A TranscriptSource per CLI, Waybill-style briefs in .interface/handoff/ (git-excluded), and a 'Continue in...' action using upstream's AgentHandoffComposer.",
+      "key_edits": "- Use official exports first: 'muse export', 'opencode session export' and Claude session files. continues is only an optional reader: its OpenCode parser targets the v1 schema, while the installed 2.0.32 uses session_v2.\n- The brief metadata follows Waybill's fields (schema 0.2, still a draft).\n- Transcript and tool output are fenced as untrusted, and the user reviews the brief before it is sent.\n- Add a seam in AgentHandoffComposer.tsx only if no new-file route exists.\n- Offer a Muse reader upstream to continues."
+    },
+    {
+      "name": "usage-limits-autoswitch",
+      "action": "new",
+      "order": 8,
+      "scope": "S5. A LimitWatcher, a Waiting-for-usage state, opt-in auto-switch through Continue in..., and resume at reset.",
+      "key_edits": "- Signal shape: {cli, kind, resetsAt, source}.\n- Claude signals come from upstream's statusline rate_limits and the StopFailure hook.\n- Other CLIs: PTY text, read with a vendored copy of cezar's parseUsageLimit (MIT header kept) plus our own Muse and OpenCode patterns.\n- Resume uses the preset's resume_args.\n- No CodexBar. The Codex usage meter is opt-in only and is not called official."
+    },
+    {
+      "name": "add-more-agent-clis",
+      "action": "new",
+      "order": 9,
+      "scope": "Later. Launch builders, transcript sources and limit signals for Codex, Gemini and Grok.",
+      "key_edits": "Codex follows upstream's TOML override pattern, with the token in a 0600 file and never in argv. Each CLI gets its own golden fixtures and a doctor version check."
+    },
+    {
+      "name": "fork-shell-integration",
+      "action": "drop",
+      "order": 10,
+      "scope": "A planned follow-up named in add-mcp-hub/tasks.md. It was never created.",
+      "key_edits": "Remove the 'Start the next change (fork-shell-integration ...)' line from add-mcp-hub/tasks.md. Its scope is split across fork-desktop-shell, desktop-hub-integration and cross-cli-handoff."
+    }
+  ],
+  "user_decisions": [
+    {
+      "question": "What is the final product name?",
+      "options": [
+        "Keep 'Interface' (credited as based on Parallel Code)",
+        "Pick another name now"
+      ],
+      "recommendation": "Decide before the S1 release; keep 'Interface' if nothing better comes up",
+      "why": "The name goes into the appId, rpm name, keyring entries and update feed. Changing it after the first release breaks updates and stored keys."
+    },
+    {
+      "question": "How should the fork follow upstream Parallel Code?",
+      "options": [
+        "Weekly bot PR merged with a merge commit",
+        "Rebased patch stack with a weekly force-push (original thin-fork plan)"
+      ],
+      "recommendation": "Weekly merge-commit PR plus check-seams",
+      "why": "Nothing is rewritten under friends' open PRs or clones, and 'gh repo sync' and the GitHub UI keep working. With about 25 changed lines and PATCHES.md, the patches stay visible."
+    },
+    {
+      "question": "Which keyring backend?",
+      "options": [
+        "secret-tool subprocess",
+        "@napi-rs/keyring native module pinned to secret-service"
+      ],
+      "recommendation": "secret-tool behind the SecretStore interface (revises design D2)",
+      "why": "It ships in Fedora's libsecret, needs no native build or Electron packaging tricks, accepts the secret on stdin, and is easy to check from a terminal."
+    },
+    {
+      "question": "Who runs the hub?",
+      "options": [
+        "The app (Electron utilityProcess)",
+        "Always a systemd user service",
+        "The app now, with an optional systemd service in S3"
+      ],
+      "recommendation": "The app now, with an optional systemd service in S3",
+      "why": "Nothing extra to install for 0.1.0, and the app only ever talks to a hub it started itself. Terminal users can opt in later."
+    },
+    {
+      "question": "Should upstream's Claude chat view be off by default?",
+      "options": [
+        "Off by default (flip upstream's existing disableClaudeUiMode setting, one line)",
+        "Keep it on"
+      ],
+      "recommendation": "Off by default; users can turn it back on in Settings",
+      "why": "The safety review flagged Anthropic's policy on third-party Agent-SDK products. Also, per-launch hub injection doesn't reach that view, because it passes only one MCP config file."
+    },
+    {
+      "question": "What should the billing guard do?",
+      "options": [
+        "Remove ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN and CLAUDE_CODE_USE_* from Claude launches by default, with a per-agent opt-in",
+        "Only warn in doctor"
+      ],
+      "recommendation": "Remove by default, show a notice, and allow a per-agent opt-in",
+      "why": "A stray ANTHROPIC_API_KEY silently moves Claude Code from your subscription to pay-per-use billing, and this project exists to use subscriptions."
+    },
+    {
+      "question": "Where should Muse quota data come from in S5?",
+      "options": [
+        "Only Muse's own limit messages",
+        "Opt-in CodexBar"
+      ],
+      "recommendation": "Only limit messages, until Meta documents a usage API",
+      "why": "CodexBar uses Muse's login token to mint a key through an undocumented Meta endpoint, which is a terms-of-service grey area."
+    }
+  ],
+  "unverified": [
+    "Muse 1.4.11 accepts '-c mcpServers.interface=<JSON object>' for a new server name, with a whole-value ${INTERFACE_HUB_AUTH} header, and refuses it when a same-named global entry exists. Spike with --provider echo.",
+    "OpenCode 2.0.32 applies a per-launch OPENCODE_CONFIG_CONTENT only with --standalone, standalone sessions appear in the normal session list, and prefixed hub tools work under Code Mode (codemode defaults to true).",
+    "Claude Code 2.1.304 loads two configs given in one --mcp-config list (ours next to Parallel Code's canvas file) without prompts, and canvas tools keep working.",
+    "Claude Code, OpenCode and Muse send no Origin header to an HTTP MCP server. The reject-any-Origin rule depends on this.",
+    "An Electron utilityProcess can run the hub bundle from the packaged app, and the Electron fuses (runAsNode, NODE_OPTIONS and inspect turned off) break nothing, including auto-update. Upstream's own MCP server runs with system node, which suggests upstream doesn't use runAsNode.",
+    "The per-launch token reaches the hub over MessagePort before the agent's first request. If not, switch to signed tokens the hub can check without a registration step.",
+    "A locked GNOME keyring shows an unlock prompt when secret-tool runs from the app or from a systemd user service, and such a service can reach the Secret Service.",
+    "electron-builder builds our rpm on an Ubuntu runner with rpm installed, the rpm 'depends' list (libsecret, nodejs) works, and AppImage auto-update works from our fork's releases.",
+    "The rebranded app uses its own userData folder and single-instance lock, so it can run next to an installed Parallel Code.",
+    "Agent sandboxes let PATH shims reach D-Bus (Muse's sandbox is on unless --yolo). Vendor skills call bare parallel-cli and firecrawl from PATH. Parallel's skill-installer command is unknown, and so is whether 'firecrawl-cli init --all --skip-auth' stores nothing.",
+    "The output of 'muse export' and 'opencode session export' is enough for handoff briefs, and continues can still read current Claude Code sessions.",
+    "Claude's StopFailure hook detail identifies rate limits. What OpenCode and Muse print when they hit a usage limit is unknown, and cezar has no Muse patterns.",
+    "Claude user-scope MCP entries accept headersHelper, which global sync needs to reference the token instead of writing it.",
+    "Docker tasks on Linux may reach the host's 127.0.0.1 when run with --network host (an upstream code comment in electron/mcp/config.ts says so). Untested, so Docker tasks are skipped.",
+    "Orca's Muse preset details (--trust-workspace, prompt via stdin) still apply to Muse 1.4.11.",
+    "This pass did not re-read Anthropic's policy on third-party Agent-SDK products; it relies on the safety judge's summary.",
+    "Effort estimates per stage are guesses for a beginner building with AI coding agents."
+  ]
+}

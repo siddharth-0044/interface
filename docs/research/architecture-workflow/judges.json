@@ -1,0 +1,224 @@
+[
+  {
+    "lens": "maintainability",
+    "winner": "thin-fork",
+    "totals": [
+      {
+        "proposal": "thin-fork",
+        "total": 29
+      },
+      {
+        "proposal": "core-first",
+        "total": 27
+      },
+      {
+        "proposal": "max-assembly",
+        "total": 16
+      }
+    ],
+    "fatal": [
+      {
+        "proposal": "thin-fork",
+        "issue": "P3 (strip --mcp-config for OpenCode/Muse in electron/mcp/agent-args.ts and src/lib/agent-args.ts) and U1 (send P3 upstream as a bug fix) rely on three REFUTED claims: that Parallel Code passes --mcp-config to OpenCode and custom agents, that buildMcpLaunchArgs is called from src/lib/agent-args.ts and pty.ts, and that MCP is injected only when orchestration is on. Re-checked upstream: canConfigureCanvasMcp only accepts the basenames claude, codex and copilot (canvas-config.ts line 13), and buildMcpLaunchArgs is called only from canvas-config.ts, register.ts and coordinator.ts. OpenCode and Muse launch with no Parallel Code MCP args at all. The generic flag survives only in legacyMcpConfigArgs, for legacy saved tasks. So P3 would be a dead patch carried forever, and U1 a bogus bug report to the one maintainer whose goodwill U2-U4 depend on. Drop both."
+      },
+      {
+        "proposal": "thin-fork",
+        "issue": "U3 (extend buildMcpLaunchArgs into an upstream 'extra MCP servers per agent' feature, also listed as the mitigation for seam breakage) relies on the same refuted call-site and coverage claims. That function never runs for OpenCode or Muse launches, so it can't replace the P2 pty.ts seam. Retarget U3 to a launch-contributor hook in electron/ipc/pty.ts spawnAgent, next to applyAgentHookLaunch. That is the one path both the SpawnAgent IPC handler and coordinator sub-tasks go through."
+      }
+    ],
+    "grafts": [
+      {
+        "from": "max-assembly",
+        "idea": "Add scripts/check-seams to CI. It fails when the fork differs from upstream/main in any file not listed in fork/PATCHES.md. This enforces 'add files, don't edit them' automatically, which matters most when AI agents write the code."
+      },
+      {
+        "from": "core-first",
+        "idea": "Sync the fork with a weekly merge-commit PR instead of rebase plus force-with-lease. The default branch stays stable, so wt-done's `pull --ff-only`, friends' clones and open fork PRs keep working, and `gh repo sync` or the GitHub UI can run it. With about 25 lines of diff, PATCHES.md and check-seams, nothing gets buried. Upstream PRs can still be cut by cherry-picking a patch onto a branch from the mirror `main`."
+      },
+      {
+        "from": "core-first",
+        "idea": "Add a dependency-cruiser rule to the monorepo: @interface/core imports neither Electron nor the MCP SDK, and SDK v2 is used only in the hub package. This keeps core testable on plain GitHub runners."
+      },
+      {
+        "from": "core-first",
+        "idea": "Write the global-sync entries with jsonc-parser plus `claude mcp add/remove --scope user`, not add-mcp. Verification found add-mcp writes non-atomically, hard-codes ~/.claude.json and ~/.config/opencode, writes the V1 shape into an empty OpenCode config, and has no Muse support. From rulesync, port only the Muse field mapping, not its whole-block replace: keep whichever root key already exists, write schema_version 1, and use exactly one optional flag."
+      },
+      {
+        "from": "core-first",
+        "idea": "Read sessions for handoff through a TranscriptSource that uses the official exports first (`muse export`, `opencode session export`). Treat continues as an optional reader only: its OpenCode parser targets the v1 SQLite schema, while the installed v2.0.32 uses session_v2 tables."
+      },
+      {
+        "from": "max-assembly",
+        "idea": "Ship the `ifc` CLI inside the rpm/AppImage (/usr/bin), built in the same pipeline as the app. The app and CLI then can't drift apart in version, and npm publishing can wait."
+      },
+      {
+        "from": "max-assembly",
+        "idea": "Two habits. First, degrade gracefully: if the keyring is locked, keep serving the keyless providers (Parallel Search, Context7) and mark the keyed ones as failing. Second, keep a dependency register: every third-party package sits behind our own interface, with an exact pin, a named fallback and a spike before adoption."
+      },
+      {
+        "from": "core-first",
+        "idea": "Stop task env files from spoofing INTERFACE_HUB_AUTH. Do it by overwriting the variable in spawnEnv inside the launch seam, after buildPtySpawnEnv; values set by the main process bypass ENV_BLOCK_LIST. That avoids editing upstream's block list in pty.ts."
+      },
+      {
+        "from": "core-first",
+        "idea": "Run the vendor skills installer with `firecrawl-cli init --all --skip-auth` (check that the flag exists) so it doesn't store its own plaintext key next to our keyring copy."
+      }
+    ]
+  },
+  {
+    "lens": "safety",
+    "winner": "thin-fork, provided two steps are fixed: drop P3/U1 and use --skip-auth for Firecrawl",
+    "totals": [
+      {
+        "proposal": "thin-fork",
+        "total": 33
+      },
+      {
+        "proposal": "core-first",
+        "total": 29
+      },
+      {
+        "proposal": "max-assembly",
+        "total": 18
+      }
+    ],
+    "fatal": [
+      {
+        "proposal": "thin-fork",
+        "issue": "P3 (removing --mcp-config for opencode/muse in electron/mcp/agent-args.ts and src/lib/agent-args.ts) and U1 (sending P3 upstream as a bug fix) rest on a claim the verification refuted: that Parallel Code passes --mcp-config to OpenCode and custom agents and so breaks their launches. In fact canvas and coordinator MCP injection only run for claude, codex and copilot (canConfigureCanvasMcp, isSupportedDelegationAgent). OpenCode and custom agents such as Muse get no MCP args from Parallel Code, and buildMcpLaunchArgs is not called from pty.ts or src/lib/agent-args.ts. Fix: drop P3 and U1, since the only remaining path is legacyMcpConfigArgs for old saved tasks, and point U3 at a launch hook in spawnAgent instead of buildMcpLaunchArgs. This doesn't weaken the security design."
+      },
+      {
+        "proposal": "thin-fork",
+        "issue": "The S3 vendor-skills step `npx -y firecrawl-cli@latest init --all --browser` left open whether --browser stores a plaintext key. I checked firecrawl/cli src/utils/credentials.ts during this judging pass (the supplied verification didn't cover it): it does. The browser login writes the API key to ~/.config/firecrawl-cli/credentials.json (mode 0600), which breaks the proposal's 'keys never in plaintext' promise. Fix: use the documented --skip-auth flag and let the per-process shim provide FIRECRAWL_API_KEY."
+      },
+      {
+        "proposal": "max-assembly",
+        "issue": "The hub front depends on the assumption that mcp-proxy's `authenticate` rejects requests before any MCP handling. Reading punkpeye/mcp-proxy src/startHTTPServer.ts in this judging pass shows that's false. The defaults are host '::', CORS origin '*' and sseEndpoint '/sse'. `authenticate` is only called in the Streamable HTTP handler. GET /sse and POST /messages only pass the X-API-Key middleware, which returns true when no apiKey is set. OPTIONS, /ping and onUnhandledRequest all run before auth. So the design as specified has an unauthenticated tool path, with no Host or Origin check, open to local processes and possibly to web pages. Fix: set sseEndpoint:null, cors:false and host:'127.0.0.1' explicitly, run the guard inside createServer as well, and add tests. Or replace mcp-proxy with SDK v2's createMcpHandler and its Host, Origin and bearer helpers."
+      }
+    ],
+    "grafts": [
+      {
+        "from": "core-first",
+        "idea": "Install vendor skills with `npx firecrawl-cli init --all --skip-auth` (the flag is documented) instead of `--browser`, and pin the version instead of @latest. Apply the same rule to parallel-cli: the vendor CLI never logs in or stores a key, and provider CLIs get their key only from the per-process shim."
+      },
+      {
+        "from": "core-first",
+        "idea": "Add INTERFACE_HUB_AUTH (and any other hub-token variable names) to Parallel Code's ENV_BLOCK_LIST, so a per-agent env file can't spoof or override the token the main process injects."
+      },
+      {
+        "from": "core-first",
+        "idea": "Write into the spec that the keys IPC is write-only: the renderer only ever gets hasKey, and a test checks this. State the threat model in the README: Secret Service has no per-app access control, so any same-user process, including an agent's shell, can read unlocked items. The keyring stops plaintext at rest and accidental leaks, not a malicious agent."
+      },
+      {
+        "from": "core-first",
+        "idea": "For opt-in global sync, never write the long-lived token as a literal. Reference it instead: OpenCode {file:} or {env:} (anomalyco/opencode#5299 and #13219 are both fixed), Muse ${VAR}, and Claude's documented headersHelper. Also use `claude mcp add/remove --scope user` and jsonc-parser instead of add-mcp's direct, non-atomic ~/.claude.json write. Muse reportedly reads Claude's files."
+      },
+      {
+        "from": "core-first",
+        "idea": "Publish ifc to npm with trusted publishing and provenance, and attach GitHub artifact attestations to interface-core-<v>.tgz in addition to the sha256 lock. Use a dependency-cruiser rule so only the hub module can import the SecretStore."
+      },
+      {
+        "from": "max-assembly",
+        "idea": "Add a CI test that builds the final spawn env for every agent preset and asserts it contains no provider-key variable names, and no ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN unless the user opted in. Compare bearer tokens with timingSafeEqual."
+      },
+      {
+        "from": "max-assembly",
+        "idea": "Add scripts/check-seams: CI fails when the fork's diff against upstream/main touches any file outside the P1-P6 allowlist. That gives every sync PR and every fork PR a small surface to review."
+      },
+      {
+        "from": "max-assembly",
+        "idea": "When the keyring is locked, keep serving the keyless providers (Parallel Search, Context7) and mark the keyed ones as failing. Never add a fallback store."
+      },
+      {
+        "from": "judge (verified today)",
+        "idea": "Build the hub front on SDK v2's own helpers (validateHostHeader with localhostAllowedHostnames, validateOriginHeader with localhostAllowedOrigins, requireBearerAuth). Reject any request that carries an Origin header, since the CLIs send none. Send no CORS headers. Run the checks before parsing the body, on every route including health. Add integration tests for: no token, a foreign Host, a foreign Origin, OPTIONS, and a legacy /sse request."
+      },
+      {
+        "from": "judge (verified today)",
+        "idea": "Add a billing guard at launch, not just in doctor. In the launch seam for claude, remove ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN and CLAUDE_CODE_USE_* from the merged spawn env (login shell plus Parallel Code's env file) by default, show a visible notice, and offer a per-agent opt-in to keep them."
+      },
+      {
+        "from": "judge (verified today)",
+        "idea": "Parallel Code's package.json has no electronFuses. Add them to the generated builder config: runAsNode false, enableNodeOptionsEnvironmentVariable false, enableNodeCliInspectArguments false. Thin-fork can do this because its hub is a utilityProcess; core-first and max-assembly need ELECTRON_RUN_AS_NODE."
+      },
+      {
+        "from": "judge (verified today)",
+        "idea": "Hide Parallel Code's Agent-SDK Claude chat view (electron/chat/claude.ts) in Interface builds. Anthropic allows the unmodified CLI in a PTY but not third-party Agent-SDK products offering claude.ai login. Give the license allowlist explicit entries for MPL-2.0 (web-push), MPL-2.0 or Apache-2.0 (dompurify) and OFL-1.1 (fonts), and either drop or explicitly except the proprietary @anthropic-ai/claude-agent-sdk JavaScript package (license 'SEE LICENSE IN README.md'). Make Codex usage (fetchCodexUsage, an OAuth token sent to an undocumented endpoint) opt-in, and don't call it official."
+      },
+      {
+        "from": "judge",
+        "idea": "Tie each stored key to its catalog origin, so the hub only ever sends the Firecrawl key to mcp.firecrawl.dev, the Parallel key to *.parallel.ai, and so on, even if hub.json is edited. Shims should exec an absolute binary path recorded at setup and check its owner, never look the binary up on PATH."
+      },
+      {
+        "from": "core-first / max-assembly (Waybill untrusted-bundle rule)",
+        "idea": "Treat handoff briefs as untrusted, since they carry web content the tools fetched. Fence transcript and tool output as quoted data, and require the user to review the brief before it's sent, except in the explicit opt-in auto-switch mode."
+      }
+    ]
+  },
+  {
+    "lens": "delivery",
+    "winner": "max-assembly",
+    "totals": [
+      {
+        "proposal": "thin-fork",
+        "total": 24
+      },
+      {
+        "proposal": "core-first",
+        "total": 23
+      },
+      {
+        "proposal": "max-assembly",
+        "total": 31
+      }
+    ],
+    "fatal": [
+      {
+        "proposal": "thin-fork",
+        "issue": "P3 (strip --mcp-config for opencode/muse in electron/mcp/agent-args.ts and src/lib/agent-args.ts) and U1 (file P3 upstream as a bug fix) rest on the REFUTED claim that Parallel Code passes '--mcp-config' to OpenCode and custom agents. Verified: every PC MCP injection path (canvas, coordinator, delegation) only runs for claude, codex and copilot basenames, so OpenCode and custom agents like Muse get no PC MCP args. The only exception is a legacy saved-task path through legacyMcpConfigArgs. P3 fixes nothing, and U1 would be an invalid bug report to the single maintainer whose goodwill the fork depends on. Remove both from S1 and from the fork-desktop-shell change; at most keep a regression test asserting that OpenCode/Muse launch args contain no --mcp-config."
+      },
+      {
+        "proposal": "thin-fork",
+        "issue": "U3 (an upstream 'extra MCP servers per agent' change that extends buildMcpLaunchArgs) rests on the REFUTED call graph. buildMcpLaunchArgs is not called from electron/ipc/pty.ts or src/lib/agent-args.ts; it only feeds canvas and coordinator launches of claude, codex and copilot. Extending it would never reach OpenCode or Muse. The upstream ask should be a launch-decorator hook in pty.ts spawnAgent, as core-first frames it. This is a minor step and doesn't block the proposal once replaced."
+      }
+    ],
+    "grafts": [
+      {
+        "from": "thin-fork",
+        "idea": "'Add files, don't edit them', based on measured upstream churn: keep hot-file edits to 1-4 lines. Generate the electron-builder config at build time instead of editing package.json's build block: appId, productName, publish pointed at our repo, and Linux targets [AppImage, rpm] with the rpm requiring libsecret. Turn off upstream release.yml and android.yml with 'gh workflow disable' instead of editing them. Add a CI assertion that app-update.yml points at our repo. Upstream has touched package.json 30 times since August, so this keeps max-assembly's weekly merge syncs free of conflicts there."
+      },
+      {
+        "from": "thin-fork",
+        "idea": "Per-launch hub tokens, bound to the agent and revoked when its PTY exits (and the 0600 config file deleted), instead of one long-lived token in every launch. The long-lived keyring token is used only for opt-in global sync."
+      },
+      {
+        "from": "thin-fork",
+        "idea": "Put the hub into Parallel Code's existing --mcp-config value list (one flag, inserted before '--') instead of adding a second flag, because PC already attaches its own canvas or coordinator config to essentially every fresh Claude spawn. Skip shells, Docker tasks (the host loopback isn't reachable from containers) and CLIs that are already globally synced. Fixture-test both argument orders."
+      },
+      {
+        "from": "thin-fork",
+        "idea": "Make v0.1.0's acceptance test explicit. On Fedora 44, parallel_web_search plus one Context7 tool must succeed from Claude Code, OpenCode and Muse launched in the app (6 calls), and grep must find no provider key in any CLI config. Pin golden fixtures per CLI version (Claude 2.1.x, OpenCode 2.0.x, Muse 1.4.x), and have doctor flag unknown versions."
+      },
+      {
+        "from": "thin-fork",
+        "idea": "Fail soft: if the hub is missing or crashes, the app still runs as plain Parallel Code and agents launch without hub tools instead of failing."
+      },
+      {
+        "from": "core-first",
+        "idea": "Add INTERFACE_HUB_AUTH to PC's ENV_BLOCK_LIST so a per-agent env file can't override or spoof the token (values the main process adds bypass the list). The renderer only ever receives hasKey booleans over IPC."
+      },
+      {
+        "from": "core-first",
+        "idea": "Give the OpenCode per-launch entry oauth:false and test it under codemode. Name the fallback now: an OpenCode-only global entry that reads the token through {file:...}. Substitution issue #5299 is closed, so {env:}/{file:} can be used."
+      },
+      {
+        "from": "core-first",
+        "idea": "Keep hub/ free of Electron imports and independently installable and testable (its own package.json and lockfile, plus a dependency-cruiser rule). Friends and CI can then work on the hub without the Electron/node-pty toolchain, and its SDK v2 can't clash with the fork's SDK ^1.27. Ship the terminal 'launch <cli>' command in the same release, since it reuses the same LaunchInjector."
+      },
+      {
+        "from": "core-first",
+        "idea": "Default to a thin own aggregator on MCP SDK v2 with always-prefixed <provider>_<tool> names, as in design D4 and the spec's 'parallel_web_search' acceptance, if the spike confirms 1MCP's stdio mode is deprecated. The verification found SDK v2 already exports createMcpHandler (serves both protocol eras) plus validateHostHeader, validateOriginHeader and requireBearerAuth, so the guarded front needs neither 1MCP nor mcp-proxy."
+      }
+    ]
+  }
+]
